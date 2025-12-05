@@ -22,14 +22,47 @@ Telegram-бот для эмоциональной поддержки в ночн
 - **Сфера покоя** — визуализации для внутреннего покоя
 - **Лабиринт разума** — исследование своих мыслей
 
-## Установка
-
-### Требования
+## Требования
 
 - Python 3.9+
 - Telegram Bot Token (получить у [@BotFather](https://t.me/BotFather))
 
-### Шаги установки
+## Деплой на Fly.io (рекомендуется)
+
+### 1. Установите Fly CLI
+
+```bash
+curl -L https://fly.io/install.sh | sh
+```
+
+### 2. Авторизуйтесь
+
+```bash
+fly auth login
+```
+
+### 3. Создайте приложение
+
+```bash
+fly launch --name heart-of-the-night-bot --region ams --no-deploy
+```
+
+### 4. Установите секреты
+
+```bash
+fly secrets set TELEGRAM_BOT_TOKEN="your_bot_token_here"
+fly secrets set WEBHOOK_URL="https://heart-of-the-night-bot.fly.dev"
+```
+
+### 5. Задеплойте
+
+```bash
+fly deploy
+```
+
+После деплоя бот автоматически установит webhook и начнёт работать 24/7.
+
+## Локальный запуск
 
 1. Клонируйте репозиторий:
 ```bash
@@ -42,16 +75,11 @@ cd heart-of-the-night-bot
 pip install -r requirements.txt
 ```
 
-3. Настройте токен бота:
-
-**Вариант 1:** Установите переменную окружения:
+3. Установите переменные окружения:
 ```bash
 export TELEGRAM_BOT_TOKEN="your_bot_token_here"
-```
-
-**Вариант 2:** Замените значение в файле `bot.py`:
-```python
-TOKEN = "your_bot_token_here"
+export WEBHOOK_URL="https://your-domain.com"
+export PORT=8080
 ```
 
 4. Запустите бота:
@@ -63,18 +91,22 @@ python bot.py
 
 ```
 heart-of-the-night-bot/
-├── bot.py              # Основной файл бота
+├── bot.py              # Основной файл бота (webhook + HTTP сервер)
 ├── requirements.txt    # Зависимости Python
+├── Dockerfile          # Docker образ для деплоя
+├── fly.toml           # Конфигурация Fly.io
 ├── README.md          # Документация
 ├── .gitignore         # Игнорируемые файлы
 └── user_data/         # Данные пользователей (создаётся автоматически)
 ```
 
-## Использование
+## Переменные окружения
 
-1. Найдите бота в Telegram
-2. Отправьте команду `/start`
-3. Используйте кнопки меню для взаимодействия
+| Переменная | Описание |
+|------------|----------|
+| `TELEGRAM_BOT_TOKEN` | Токен бота от @BotFather |
+| `WEBHOOK_URL` | URL вашего приложения (например, https://app-name.fly.dev) |
+| `PORT` | Порт для HTTP сервера (по умолчанию 8080) |
 
 ## Лицензия
 
