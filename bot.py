@@ -1,13 +1,17 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes
 )
+from aiohttp import web
 import os
 import json
 import random
+import asyncio
 
-TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
+PORT = int(os.environ.get("PORT", 8080))
 DATA_DIR = "user_data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -72,7 +76,6 @@ MAIN_KEYBOARD = [
 ]
 
 def save_user_data(user_id, key, value):
-    """Сохраняет данные пользователя в JSON"""
     file_path = os.path.join(DATA_DIR, f"{user_id}.json")
     data = {}
     if os.path.exists(file_path):
@@ -85,10 +88,6 @@ def save_user_data(user_id, key, value):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 async def generate_ai_response(prompt: str):
-    """
-    Подключение к AI (Google Gemini или другая система)
-    Возвращает длинные, атмосферные ответы.
-    """
     sample_responses = [
         "Тьма внутри тебя — не враг, а спутник, который ждёт твоего внимания. Позволь ей быть твоей силой.",
         "Каждая мысль, даже тяжёлая, заслуживает быть услышанной. Не бойся заглянуть в свою тьму.",
@@ -103,12 +102,10 @@ async def generate_ai_response(prompt: str):
     return random.choice(sample_responses)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Приветствие при /start"""
     keyboard = InlineKeyboardMarkup(MAIN_KEYBOARD)
     await update.message.reply_text(START_TEXT, reply_markup=keyboard)
 
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка нажатий кнопок"""
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -167,7 +164,6 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(MAIN_KEYBOARD))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка текстовых сообщений для дневника, выговора и историй"""
     user_id = update.message.from_user.id
     if "awaiting_input" in context.user_data:
         key = context.user_data["awaiting_input"]
@@ -175,12 +171,57 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Твоя запись сохранена в {key.replace('_', ' ')}.")
         context.user_data.pop("awaiting_input")
 
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
+async def health_check(request):
+    return web.Response(text="OK", status=200)
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(handle_button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+async def webhook_handler(request):
+    app = request.app["bot_app"]
+    data = await request.json()
+    update = Update.de_json(data, app.bot)
+    await app.process_update(update)
+    return web.Response(text="OK", status=200)
 
+async def on_startup(web_app):
+    bot_app = web_app["bot_app"]
+    await bot_app.initialize()
+    await bot_app.start()
+    
+    if WEBHOOK_URL:
+        webhook_path = f"/webhook/{TOKEN}"
+        full_url = f"{WEBHOOK_URL}{webhook_path}"
+        await bot_app.bot.set_webhook(url=full_url)
+        print(f"Webhook set to: {full_url}")
+    
     print("Heart of the Night запущен...")
-    app.run_polling()
+
+async def on_shutdown(web_app):
+    bot_app = web_app["bot_app"]
+    await bot_app.stop()
+    await bot_app.shutdown()
+
+def main():
+    if not TOKEN:
+        print("Error: TELEGRAM_BOT_TOKEN not set")
+        return
+    
+    bot_app = Application.builder().token(TOKEN).build()
+    
+    bot_app.add_handler(CommandHandler("start", start))
+    bot_app.add_handler(CallbackQueryHandler(handle_button))
+    bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    web_app = web.Application()
+    web_app["bot_app"] = bot_app
+    
+    web_app.router.add_get("/", health_check)
+    web_app.router.add_get("/health", health_check)
+    web_app.router.add_post(f"/webhook/{TOKEN}", webhook_handler)
+    
+    web_app.on_startup.append(on_startup)
+    web_app.on_shutdown.append(on_shutdown)
+    
+    print(f"Starting server on port {PORT}...")
+    web.run_app(web_app, host="0.0.0.0", port=PORT)
+
+if __name__ == "__main__":
+    main()
